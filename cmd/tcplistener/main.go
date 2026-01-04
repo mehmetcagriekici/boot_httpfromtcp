@@ -4,8 +4,10 @@ import(
 	"log"
 	"fmt"
 	"net"
-	"io"
-        "strings"
+	// "io"
+        // "strings"
+
+	"github.com/mehmetcagriekici/httpfromtcp/internal/request"
 )
 
 func main() {
@@ -20,14 +22,25 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
+		
 		fmt.Println("A connection has been accepted.")
-		lines := getLinesChannel(conn)
-		for line := range lines {
-			fmt.Println(line)
+		req, err := request.RequestFromReader(conn)
+		if err != nil {
+			log.Fatal(err)
 		}
+		
+		fmt.Println("Request line:")
+		fmt.Printf("- Method: %s\n", req.RequestLine.Method)
+		fmt.Printf("- Target: %s\n", req.RequestLine.RequestTarget)
+		fmt.Printf("- Version: %s\n", req.RequestLine.HttpVersion)
+		// lines := getLinesChannel(conn)
+		// for line := range lines {
+		//	fmt.Println(line)
+		// }
 	}	
 }
 
+/*
 func getLinesChannel(conn net.Conn) <-chan string {
 	buf := make([]byte, 8)
 	currLine := ""
@@ -60,3 +73,4 @@ func getLinesChannel(conn net.Conn) <-chan string {
 	}()
 	return result
 }
+*/
