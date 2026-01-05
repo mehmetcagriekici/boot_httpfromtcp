@@ -1,10 +1,13 @@
 package request
 
 import(
+	"log"
 	"io"
 	"strings"
 	"regexp"
         "errors"
+
+	"github.com/mehmetcagriekici/httpfromtcp/internal/headers"
 )
 
 const BUFFER_SIZE int = 8
@@ -12,12 +15,14 @@ const BUFFER_SIZE int = 8
 type parserState int
 const(
 	INITIALIZED parserState = iota
+	PARSING_HEADERS
 	DONE      
 )
 
 type Request struct {
 	RequestLine RequestLine
 	State parserState
+	Headers headers.Headers
 }
 
 type RequestLine struct {
@@ -38,8 +43,22 @@ type RequestLine struct {
 		}
 
 		r.RequestLine = *rl
-		r.State = DONE
+		r.State = PARSING_HEADERS
 
+		return n, nil
+	}
+
+	if r.State == PARSING_HEADERS {
+		n, done, err := r.Headers.Parse(data)
+		if err != nil {
+			return 0, err
+		}
+		
+		if done {
+			r.State = DONE
+			return n, nil
+		}
+		
 		return n, nil
 	}
 	
@@ -56,6 +75,7 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 
 	req := &Request{
 		State: INITIALIZED,
+		Headers: make(headers.Headers),
 	}
 
 	for {
@@ -73,6 +93,10 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 		n, err := reader.Read(buf[readToIndex:])
 		if err != nil {
 			if errors.Is(err, io.EOF) {
+				if string(buf[:readToIndex]) != "\r\n" {
+					log.Println(string(buf[:readToIndex]))
+					return nil, errors.New("Missing Request End")
+				}
 				req.State = DONE
 				break
 			} else {
