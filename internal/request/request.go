@@ -6,6 +6,7 @@ import(
 	"strings"
 	"regexp"
         "errors"
+	"strconv"
 
 	"github.com/mehmetcagriekici/httpfromtcp/internal/headers"
 )
@@ -16,6 +17,7 @@ type parserState int
 const(
 	INITIALIZED parserState = iota
 	PARSING_HEADERS
+	PARSING_BODY
 	DONE      
 )
 
@@ -23,6 +25,7 @@ type Request struct {
 	RequestLine RequestLine
 	State parserState
 	Headers headers.Headers
+	Body []byte
 }
 
 type RequestLine struct {
@@ -53,16 +56,43 @@ type RequestLine struct {
 		if err != nil {
 			return 0, err
 		}
-		
+
 		if done {
-			r.State = DONE
-			return n, nil
+			r.State = PARSING_BODY
+			if string(data) == "\r\n" {
+				r.State = DONE
+			}
 		}
 		
 		return n, nil
 	}
-	
-	if r.State == DONE {
+
+	if r.State == PARSING_BODY {
+		cl, ok := r.Headers.Get("content-length")
+		if !ok {
+			r.State = DONE
+			return 0, nil
+		}
+
+		l, err := strconv.Atoi(cl)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		r.Body = append(r.Body, data...)
+		if len(r.Body) > l {
+			return 0, errors.New("Length of body is greater than the Content-Length")
+		}
+
+		if len(r.Body) == l {
+			r.State = DONE
+			log.Println("Entire Body is consumed")
+		}
+
+		return len(data), nil
+	}
+
+	if r.State == DONE {		
 		return 0, errors.New("Request State is Done")
 	}
 
@@ -76,6 +106,7 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 	req := &Request{
 		State: INITIALIZED,
 		Headers: make(headers.Headers),
+		Body:    make([]byte, 0),
 	}
 
 	for {
@@ -93,15 +124,12 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 		n, err := reader.Read(buf[readToIndex:])
 		if err != nil {
 			if errors.Is(err, io.EOF) {
-				if string(buf[:readToIndex]) != "\r\n" {
-					log.Println(string(buf[:readToIndex]))
-					return nil, errors.New("Missing Request End")
+				if req.State != DONE {
+					return nil, errors.New("Invalid request")
 				}
-				req.State = DONE
 				break
-			} else {
-				return nil, err
 			}
+			return nil, err
 		}
 
 		if n == 0 {
@@ -135,7 +163,7 @@ func parseRequestLine(b []byte) (int, *RequestLine, error) {
 		return 0, nil, nil
 	}
 	
-	mpv := strings.Split(str[:i], " ") 
+	mpv := strings.Fields(str[:i]) 
 	if len(mpv) != 3 {
 		return 0, nil, errors.New("Request must contain a method, path, and http version")
 	}

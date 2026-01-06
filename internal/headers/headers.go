@@ -9,23 +9,35 @@ import(
 
 type Headers map[string]string
 
+func (h Headers) Get(key string) (string, bool) {
+	if val, ok := h[key]; ok {
+		return val, true
+	}
+	return "", false
+}
+
 func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	str := string(data)
-	crlf := strings.Index(str, "\r\n")
-	if crlf == -1 {
+	
+	cr := strings.Index(str, "\r\n")
+	if cr == -1 {
 		return 0, false, nil
 	}
 
-	if crlf == 0 {
-		return len(str), true, nil
+	if cr == 0 {
+		return 2, true, nil
 	}
 
-	str = str[:crlf+2]
+	str = str[:cr+2]
 	harr := strings.Fields(strings.Trim(str, "\r\n"))
+	if len(harr) == 0 {
+		return 0, true, nil
+	}
+	
 	if len(harr) == 1 {
 		harr = append(harr, "")
 	}
-	
+
 	if len(harr) != 2 {
 		return 0, false, errors.New("Invalid Headers Struct")
 	}
@@ -49,5 +61,5 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 		h[fieldName] = harr[1]
 	}
 
-	return len(str[:crlf+2]), false, nil
+	return len(str[:cr+2]), false, nil
 }
