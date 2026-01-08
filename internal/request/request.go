@@ -34,7 +34,26 @@ type RequestLine struct {
 	Method        string
 }
 
- func (r *Request) parse(data []byte) (int, error) {
+func (r *Request) parse(data []byte) (int, error) {
+	totalBytesParsed := 0
+
+	for r.State != DONE {
+		np, err := r.parseSingle(data[totalBytesParsed:])
+		if err != nil {
+			return 0, err
+		}
+
+		totalBytesParsed += np
+
+		if np == 0 {
+			break
+		}
+	}
+
+	return totalBytesParsed, nil
+}
+
+ func (r *Request) parseSingle(data []byte) (int, error) {
 	if r.State == INITIALIZED {
 		n, rl, err := parseRequestLine(data)
 		if err != nil {
@@ -71,7 +90,7 @@ type RequestLine struct {
 		cl, ok := r.Headers.Get("content-length")
 		if !ok {
 			r.State = DONE
-			return 0, nil
+			return len(data), nil
 		}
 
 		l, err := strconv.Atoi(cl)
@@ -143,7 +162,7 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 			return nil, err
 		}
 		
-		copy(buf, buf[np:readToIndex])
+		copy(buf, buf[np:])
 		readToIndex -= np
 	}
 
