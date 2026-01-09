@@ -12,6 +12,7 @@ const(
 	STATE_WRITE_STATUS_LINE WriterState = iota
 	STATE_WRITE_HEADERS
 	STATE_WRITE_BODY
+	STATE_WRITE_TRAILERS
 )
 type Writer struct{
 	Writer io.Writer
@@ -96,4 +97,41 @@ func ResponseHTML(title, header, message string) string{
     <p>%s</p>
   </body>
 </html>`, title, header, message)
+}
+func (w *Writer) WriteChunkedBody(p []byte) (int, error) {
+	if w.WriteState != STATE_WRITE_BODY {
+		return 0, fmt.Errorf("Wrong writer state")
+	}
+	n, err := w.Writer.Write(p)
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+func (w *Writer) WriteChunkedBodyDone() (int, error) {
+	n, err := w.Writer.Write([]byte("0\r\n"))
+	if err != nil {
+		return 0, err
+	}
+	w.WriteState = STATE_WRITE_TRAILERS
+	return n, nil
+}
+
+func (w *Writer) WriteTrailers(headers headers.Headers) error {
+	if w.WriteState != STATE_WRITE_TRAILERS {
+		return fmt.Errorf("Wrong writer state")
+	}
+        resp := ""
+	for k, v := range headers {
+		resp += fmt.Sprintf("%s: %s\r\n", k, v)
+	}
+	
+	resp += "\r\n"
+	if _, err := w.Writer.Write([]byte(resp)); err != nil {
+		return err
+	}
+	w.WriteState = STATE_WRITE_STATUS_LINE
+	return nil
+
 }
